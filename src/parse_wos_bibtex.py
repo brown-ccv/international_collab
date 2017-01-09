@@ -32,6 +32,10 @@ def read_all_bibtex(folder):
 
 
 def get_brown_authors(affiliation_str):
+    '''
+    Given the value of the `affiliation` entry from a Web-of-Science BibTex
+    entry, this function returns the authors affiliated with Brown University.
+    '''
     str_list = affiliation_str.split('Brown Univ')
     out = []
 
