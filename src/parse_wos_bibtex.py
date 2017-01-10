@@ -52,17 +52,21 @@ def get_brown_authors(affiliation_str):
     return list(set(out))
 
 
-def get_international_authors(affiliation_str):
+def get_international_authors(affiliation_str, isi_id):
     affiliation_list = affiliation_str.split('\n')
     print(affiliation_list)
 
+    usa_authors = []
     for affiliation in affiliation_list:
         if affiliation[-4:] == 'USA.':
-            print("hit this")
-            affiliation_list.remove(affiliation)
-    print(affiliation_list)
+            usa_authors.append(affiliation)
+
+    # strip out the authors from the USA
+    for athr in usa_authors:
+        affiliation_list.remove(athr)
+
     df = pd.DataFrame()
-    i = 0
+    i = 0                           # row counter we'll increment
     for a in affiliation_list:
 
         # When we only have one author,
@@ -82,9 +86,13 @@ def get_international_authors(affiliation_str):
                 df.loc[i, 'author'] = athr
                 df.loc[i, 'institution'] = institution
                 i += 1
+                
+    # We will pd.merge() with the Brown authors table
+    # using the publication ID
+    df['isi_id'] = isi_id
     return df
 
-get_international_authors(d[1]["affiliation"])
+get_international_authors(d[1]["affiliation"], '123')
 
 
 r = '^[^,]*,[^,]*'
