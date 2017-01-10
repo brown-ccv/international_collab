@@ -1,6 +1,7 @@
 import bibtexparser
 import os
-
+import pandas as pd
+import re
 
 def read_bibtex(filename):
     with open(filename) as bibtex_file:
@@ -26,9 +27,11 @@ def read_all_bibtex(folder):
     files = os.listdir(folder)
     for f in files:
         if is_bibtex_file(f):
-            pubs = read_bibtex(f)
-            publications.append(pubs)
+            pubs = read_bibtex(folder + f)
+            publications += pubs.entries
     return publications
+
+d = read_all_bibtex('../wos_bibtex/')
 
 
 def get_brown_authors(affiliation_str):
@@ -47,3 +50,43 @@ def get_brown_authors(affiliation_str):
 
             out += brown_authors
     return list(set(out))
+
+
+def get_international_authors(affiliation_str):
+    affiliation_list = affiliation_str.split('\n')
+    print(affiliation_list)
+
+    for affiliation in affiliation_list:
+        if affiliation[-4:] == 'USA.':
+            print("hit this")
+            affiliation_list.remove(affiliation)
+    print(affiliation_list)
+    df = pd.DataFrame()
+    i = 0
+    for a in affiliation_list:
+
+        # When we only have one author,
+        if a.find('; ') == -1:
+            # The regex below matches from the beginning
+            # of the string until the second comma
+            second_comma = re.match('^[^,]*,[^,]*', a).end()
+            df.loc[i, 'author'] = a[0:second_comma]
+            df.loc[i, 'institution'] = a[second_comma+1:]
+            i += 1
+        # When we have multiple authors in same affiliation line
+        else:
+            last_semicolon = a.rfind('; ')
+            institution = a[last_semicolon+1:]
+            authors = a[0:last_semicolon].split('; ')
+            for athr in authors:
+                df.loc[i, 'author'] = athr
+                df.loc[i, 'institution'] = institution
+                i += 1
+    return df
+
+get_international_authors(d[1]["affiliation"])
+
+
+r = '^[^,]*,[^,]*'
+s = 'Liang, Xin, Changzhou Univ, Sch Mat Sci \\& Engn, Changzhou 213164, Jiangsu, Peoples R China.'
+m = re.match(r, s)
