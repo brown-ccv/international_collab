@@ -1,1 +1,4 @@
-# international_engagement
+### Description
+This repo contains the necessary files for generating a .csv with Brown University researchers and their international collaborators. The work is done the Python script file `parse_wos_bibtex.py`.
+
+This script reads in data from .bib files (stored in `wos_bibtex/`) and returns a .csv where the rows correspond to instances of collaboration between a Brown researcher and an international researcher. Note that a single publication can have many of these instances, since and "instance" is defined to be any pair consisting of a Brown researcher and an international collaborator. So, in the case of a Brown researcher who publishes a paper with two international collaborators, that single publication will count as two "instances of collaboration" because the Brown researcher is paired with each of the two collaborators.
