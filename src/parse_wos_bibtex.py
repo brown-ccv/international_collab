@@ -6,6 +6,8 @@ import pandas as pd
 import re
 import sys
 
+from time import time
+
 
 def read_bibtex(filename):
     with open(filename) as bibtex_file:
@@ -50,7 +52,8 @@ def get_brown_authors(affiliation_str, isi_id):
         last_newline = s.rfind('\n')
         if last_newline != -1:
             brown_authors_tmp = s[last_newline+1:].split('; ')
-            brown_authors = [a.strip(', ') for a in brown_authors_tmp if a != '']
+            brown_authors = [a.strip(', ') for a in brown_authors_tmp if \
+              a != '' and '(Reprint Author)' not in a]
 
 
             authors += brown_authors
@@ -143,28 +146,27 @@ def parse_all_publication_data(dict_list):
     df = extract_publication_data(dict_list[0])
 
     for i in range(1, n):
-        print("Progress {:2.1%}".format(i / n), end="\r")
         newdata = extract_publication_data(dict_list[i])
         df = df.append(newdata, ignore_index = True)
 
-    collab_cnt = dict()
-    m = df.shape[0]
-    for i in range(m):
-        collab_cnt[df.loc[i, 'brown_author']] = collab_cnt.get(df.loc[i, 'brown_author'], 0) + 1
-
-    df['collab_instances'] = 0
-    for i in range(m):
-        df.loc[i, 'collab_instances'] = collab_cnt[df.loc[i, 'brown_author']]
+    # Count instances of collaboration for each Brown author. And
+    # note that a single publication for a Brown author will have as
+    # many "instances" of collaboration as there are international
+    # authors on that paper.
+    collab_cnt = df.groupby('brown_author').size().reset_index()
+    collab_cnt.columns = ['brown_author', 'collab_instances']
+    df = pd.merge(df, collab_cnt, how = 'left', on = 'brown_author')
 
     col_order = ['brown_author', 'intl_author', 'institution', 'isi_id', 'collab_instances']
 
-    return df[col_order].sort_values('brown_author', ascending = True)
+    return df[col_order].sort_values('brown_author', ascending = True).reset_index(drop = True)
 
 ## example use:
-# res = parse_all_publication_data(d[0:10])
+# res = parse_all_publication_data(d[0:20])
 
 
 if __name__ == '__main__':
+    t0 = time()
     folder = sys.argv[1]
     print('Reading BibTex data...')
 
@@ -174,4 +176,5 @@ if __name__ == '__main__':
     df = parse_all_publication_data(d)
     print('Writing results to .csv file...')
     df.to_csv('results.csv', index = False)
-    print('Done!')
+    elapsed = time() - t0
+    print('Done! Total run time was {0} seconds.'.format(elapsed))
