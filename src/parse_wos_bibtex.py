@@ -1,7 +1,11 @@
+#!/usr/bin/env/ python
+
 import bibtexparser
 import os
 import pandas as pd
 import re
+import sys
+
 
 def read_bibtex(filename):
     with open(filename) as bibtex_file:
@@ -9,9 +13,8 @@ def read_bibtex(filename):
     bib_data = bibtexparser.loads(bibtex_str)
     return bib_data
 
-
+## example use:
 # bib_data = read_bibtex('./wos_bibtex/savedrecs1.bib')
-#
 # print(bib_data.entries)
 
 def is_bibtex_file(filename):
@@ -31,30 +34,42 @@ def read_all_bibtex(folder):
             publications += pubs.entries
     return publications
 
-d = read_all_bibtex('../wos_bibtex/')
+## example use:
+# d = read_all_bibtex('../wos_bibtex/')
 
 
-def get_brown_authors(affiliation_str):
+def get_brown_authors(affiliation_str, isi_id):
     '''
     Given the value of the `affiliation` entry from a Web-of-Science BibTex
     entry, this function returns the authors affiliated with Brown University.
     '''
     str_list = affiliation_str.split('Brown Univ')
-    out = []
+    authors = []
 
     for s in str_list[0:-1]:            # ignore last element
         last_newline = s.rfind('\n')
         if last_newline != -1:
             brown_authors_tmp = s[last_newline+1:].split('; ')
-            brown_authors = [a.strip(', ') for a in brown_authors_tmp]
+            brown_authors = [a.strip(', ') for a in brown_authors_tmp if a != '']
 
-            out += brown_authors
-    return list(set(out))
+
+            authors += brown_authors
+
+    df = pd.DataFrame()
+    df['brown_author'] = list(set(authors))
+    df['isi_id'] = isi_id
+    return df
+
+## example use:
+# get_brown_authors(d[1]["affiliation"], '123')
 
 
 def get_international_authors(affiliation_str, isi_id):
+    '''
+    Given the value of the `affiliation` entry from a Web-of-Science BibTex
+    entry, this function returns the authors affiliated with non-US institutions.
+    '''
     affiliation_list = affiliation_str.split('\n')
-    print(affiliation_list)
 
     usa_authors = []
     for affiliation in affiliation_list:
@@ -74,7 +89,7 @@ def get_international_authors(affiliation_str, isi_id):
             # The regex below matches from the beginning
             # of the string until the second comma
             second_comma = re.match('^[^,]*,[^,]*', a).end()
-            df.loc[i, 'author'] = a[0:second_comma]
+            df.loc[i, 'intl_author'] = a[0:second_comma]
             df.loc[i, 'institution'] = a[second_comma+1:]
             i += 1
         # When we have multiple authors in same affiliation line
@@ -83,18 +98,80 @@ def get_international_authors(affiliation_str, isi_id):
             institution = a[last_semicolon+1:]
             authors = a[0:last_semicolon].split('; ')
             for athr in authors:
-                df.loc[i, 'author'] = athr
+                df.loc[i, 'intl_author'] = athr
                 df.loc[i, 'institution'] = institution
                 i += 1
-                
+
     # We will pd.merge() with the Brown authors table
     # using the publication ID
     df['isi_id'] = isi_id
+
+    # FIXME: note that this returns duplicates if a given author
+    # has multiple affiliations, which is not uncommon
     return df
 
-get_international_authors(d[1]["affiliation"], '123')
+## example use:
+# get_international_authors(d[1]["affiliation"], '123')
 
 
-r = '^[^,]*,[^,]*'
-s = 'Liang, Xin, Changzhou Univ, Sch Mat Sci \\& Engn, Changzhou 213164, Jiangsu, Peoples R China.'
-m = re.match(r, s)
+def extract_publication_data(pub_dict):
+    '''
+    Given a publication's data in dict form, as we get from bibtex, this
+    function returns a dataframe with the Brown authors in one column and
+    their respective collaborators in the other column. The institution and
+    publication ID are also in the dataframe.
+    '''
+    isi_id = pub_dict["ID"]
+    brown_authors = get_brown_authors(pub_dict["affiliation"], isi_id)
+    intl_authors = get_international_authors(pub_dict["affiliation"], isi_id)
+
+    authors = pd.merge(brown_authors, intl_authors, how = 'left', on = 'isi_id')
+    n = authors.shape[0]
+
+    # There are duplicate rows because the Reprint Author is listed twice,
+    # so we remove the duplication before returning the dataframe
+    keep_col = ['(Reprint Author)' not in x for x in authors['intl_author']]
+
+    return authors.loc[keep_col, :]
+
+## example use:
+# extract_publication_data(d[6])
+
+
+def parse_all_publication_data(dict_list):
+    n = len(dict_list)
+    df = extract_publication_data(dict_list[0])
+
+    for i in range(1, n):
+        print("Progress {:2.1%}".format(i / n), end="\r")
+        newdata = extract_publication_data(dict_list[i])
+        df = df.append(newdata, ignore_index = True)
+
+    collab_cnt = dict()
+    m = df.shape[0]
+    for i in range(m):
+        collab_cnt[df.loc[i, 'brown_author']] = collab_cnt.get(df.loc[i, 'brown_author'], 0) + 1
+
+    df['collab_instances'] = 0
+    for i in range(m):
+        df.loc[i, 'collab_instances'] = collab_cnt[df.loc[i, 'brown_author']]
+
+    col_order = ['brown_author', 'intl_author', 'institution', 'isi_id', 'collab_instances']
+
+    return df[col_order].sort_values('brown_author', ascending = True)
+
+## example use:
+# res = parse_all_publication_data(d[0:10])
+
+
+if __name__ == '__main__':
+    folder = sys.argv[1]
+    print('Reading BibTex data...')
+
+    d = read_all_bibtex(folder)
+    print('Extracting publication information...')
+
+    df = parse_all_publication_data(d)
+    print('Writing results to .csv file...')
+    df.to_csv('results.csv', index = False)
+    print('Done!')
