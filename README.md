@@ -5,3 +5,6 @@ This script reads in data from .bib files (stored in `wos_bibtex/`) and returns 
 
 ## Execution
 The script is executed from the command line, and requires a single command-line argument: the location of the directory containing the BibTex files to be parsed (e.g., `python parse_wos_bibtex.py ../wos_bibtex/`)
+
+## Dependencies
+This code was written and tested using Python 3.6, but it should also work with Python 2.7. The scipt requires the _pandas_, and _bibtexparser_ packages.
