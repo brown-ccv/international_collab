@@ -48,7 +48,10 @@ def get_brown_authors(affiliation_str, isi_id):
     str_list = affiliation_str.split('Brown Univ')
     authors = []
 
-    for s in str_list[0:-1]:            # ignore last element
+    # Except for the last entry, every entry in str_list is a string
+    # whose last authors are from Brown. The location of the \n character
+    # tells us when the Brown authors start being listed.
+    for s in str_list[0:-1]:
         last_newline = s.rfind('\n')
         if last_newline != -1:
             brown_authors_tmp = s[last_newline+1:].split('; ')
@@ -92,18 +95,34 @@ def get_international_authors(affiliation_str, isi_id):
             # The regex below matches from the beginning
             # of the string until the second comma
             second_comma = re.match('^[^,]*,[^,]*', a).end()
-            df.loc[i, 'intl_author'] = a[0:second_comma]
-            df.loc[i, 'institution'] = a[second_comma+1:]
-            i += 1
+
+            # Note that we only include an author once, which
+            # means that authors with multiple affiliations will
+            # only appear once; the affiliation that appears for
+            # that author is simply the first one listed.
+            if i == 0:
+                df.loc[i, 'intl_author'] = a[0:second_comma]
+                df.loc[i, 'institution'] = a[second_comma+1:]
+                i += 1
+            elif a[0:second_comma] not in df['intl_author'].values:
+                df.loc[i, 'intl_author'] = a[0:second_comma]
+                df.loc[i, 'institution'] = a[second_comma+1:]
+                i += 1
+
         # When we have multiple authors in same affiliation line
         else:
             last_semicolon = a.rfind('; ')
             institution = a[last_semicolon+1:]
             authors = a[0:last_semicolon].split('; ')
             for athr in authors:
-                df.loc[i, 'intl_author'] = athr
-                df.loc[i, 'institution'] = institution
-                i += 1
+                if i == 0:
+                    df.loc[i, 'intl_author'] = athr
+                    df.loc[i, 'institution'] = institution
+                    i += 1
+                elif athr not in df['intl_author'].values:
+                    df.loc[i, 'intl_author'] = athr
+                    df.loc[i, 'institution'] = institution
+                    i += 1
 
     # We will pd.merge() with the Brown authors table
     # using the publication ID
@@ -162,7 +181,22 @@ def parse_all_publication_data(dict_list):
     return df[col_order].sort_values('brown_author', ascending = True).reset_index(drop = True)
 
 ## example use:
-# res = parse_all_publication_data(d[0:20])
+# res = parse_all_publication_data(d)
+
+
+
+def find_pub(dict_list, id):
+    '''
+    This is a quick function to find a publication in the list given its ISI ID.
+    '''
+    n = len(dict_list)
+    res = None
+    for i in range(n):
+        if dict_list[i]['ID'] == id:
+            res = dict_list[i]
+    return res
+
+# pub = find_pub(d, 'ISI:000367781400001')
 
 
 if __name__ == '__main__':
