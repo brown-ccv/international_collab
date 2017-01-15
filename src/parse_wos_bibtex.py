@@ -154,7 +154,11 @@ def extract_publication_data(pub_dict):
     intl_authors = get_international_authors(pub_dict["affiliation"], doi)
 
     authors = pd.merge(brown_authors, intl_authors, how = 'left', on = 'doi')
-    n = authors.shape[0]
+    # n = authors.shape[0]
+    if 'author-email' in pub_dict:
+        authors['contact_email'] = pub_dict['author-email']
+    else:
+        authors['contact_email'] = ''
 
     # There are duplicate rows because the Reprint Author is listed twice,
     # so we remove the duplication before returning the dataframe
@@ -171,7 +175,6 @@ def parse_all_publication_data(dict_list):
     df = extract_publication_data(dict_list[0])
 
     for i in range(1, n):
-        print(i)
         newdata = extract_publication_data(dict_list[i])
         df = df.append(newdata, ignore_index = True)
 
@@ -183,7 +186,7 @@ def parse_all_publication_data(dict_list):
     collab_cnt.columns = ['brown_author', 'collab_instances']
     df = pd.merge(df, collab_cnt, how = 'left', on = 'brown_author')
 
-    col_order = ['brown_author', 'intl_author', 'institution', 'doi', 'collab_instances']
+    col_order = ['brown_author', 'intl_author', 'institution', 'doi', 'contact_email', 'collab_instances']
 
     return df[col_order].sort_values('brown_author', ascending = True).reset_index(drop = True)
 
