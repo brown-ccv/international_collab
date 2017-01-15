@@ -40,37 +40,35 @@ def read_all_bibtex(folder):
 # d = read_all_bibtex('../wos_bibtex/')
 
 
-def get_brown_authors(affiliation_str, isi_id):
+def get_brown_authors(affiliation_str, doi):
     '''
     Given the value of the `affiliation` entry from a Web-of-Science BibTex
     entry, this function returns the authors affiliated with Brown University.
     '''
-    str_list = affiliation_str.split('Brown Univ')
+    str_list = affiliation_str.split('\n')      # split by affilations
     authors = []
-
-    # Except for the last entry, every entry in str_list is a string
-    # whose last authors are from Brown. The location of the \n character
-    # tells us when the Brown authors start being listed.
-    for s in str_list[0:-1]:
-        last_newline = s.rfind('\n')
-        if last_newline != -1:
-            brown_authors_tmp = s[last_newline+1:].split('; ')
+    found_one = False                           # for sanity check
+    for s in str_list:
+        idx = s.find('Brown Univ')
+        if idx != -1:
+            found_one = True
+            brown_authors_tmp = s[0:idx].split('; ')
             brown_authors = [a.strip(', ') for a in brown_authors_tmp if \
               a != '' and '(Reprint Author)' not in a]
-
-
             authors += brown_authors
+
+    if not found_one:
+        print("WARNING: no Brown authors found in {0}".format(doi))
 
     df = pd.DataFrame()
     df['brown_author'] = list(set(authors))
-    df['isi_id'] = isi_id
+    df['doi'] = doi
     return df
 
-## example use:
-# get_brown_authors(d[1]["affiliation"], '123')
+# get_brown_authors2(d[1]["affiliation"], '123')
 
 
-def get_international_authors(affiliation_str, isi_id):
+def get_international_authors(affiliation_str, doi):
     '''
     Given the value of the `affiliation` entry from a Web-of-Science BibTex
     entry, this function returns the authors affiliated with non-US institutions.
@@ -112,8 +110,14 @@ def get_international_authors(affiliation_str, isi_id):
         # When we have multiple authors in same affiliation line
         else:
             last_semicolon = a.rfind('; ')
-            institution = a[last_semicolon+1:]
+            second_comma = re.match('^[^,]*,[^,]*', a[last_semicolon+1:]).end()
+            last_author = a[last_semicolon+1:second_comma]
+
             authors = a[0:last_semicolon].split('; ')
+            authors.append(last_author)
+            idx = last_semicolon + 1 + second_comma + 2
+            institution = a[idx:]
+
             for athr in authors:
                 if i == 0:
                     df.loc[i, 'intl_author'] = athr
@@ -126,10 +130,7 @@ def get_international_authors(affiliation_str, isi_id):
 
     # We will pd.merge() with the Brown authors table
     # using the publication ID
-    df['isi_id'] = isi_id
-
-    # FIXME: note that this returns duplicates if a given author
-    # has multiple affiliations, which is not uncommon
+    df['doi'] = doi
     return df
 
 ## example use:
@@ -143,11 +144,16 @@ def extract_publication_data(pub_dict):
     their respective collaborators in the other column. The institution and
     publication ID are also in the dataframe.
     '''
-    isi_id = pub_dict["ID"]
-    brown_authors = get_brown_authors(pub_dict["affiliation"], isi_id)
-    intl_authors = get_international_authors(pub_dict["affiliation"], isi_id)
 
-    authors = pd.merge(brown_authors, intl_authors, how = 'left', on = 'isi_id')
+    if 'doi' in pub_dict:
+        doi = pub_dict['doi']
+    else:
+        doi = pub_dict['ID']
+
+    brown_authors = get_brown_authors(pub_dict["affiliation"], doi)
+    intl_authors = get_international_authors(pub_dict["affiliation"], doi)
+
+    authors = pd.merge(brown_authors, intl_authors, how = 'left', on = 'doi')
     n = authors.shape[0]
 
     # There are duplicate rows because the Reprint Author is listed twice,
@@ -165,6 +171,7 @@ def parse_all_publication_data(dict_list):
     df = extract_publication_data(dict_list[0])
 
     for i in range(1, n):
+        print(i)
         newdata = extract_publication_data(dict_list[i])
         df = df.append(newdata, ignore_index = True)
 
@@ -176,7 +183,7 @@ def parse_all_publication_data(dict_list):
     collab_cnt.columns = ['brown_author', 'collab_instances']
     df = pd.merge(df, collab_cnt, how = 'left', on = 'brown_author')
 
-    col_order = ['brown_author', 'intl_author', 'institution', 'isi_id', 'collab_instances']
+    col_order = ['brown_author', 'intl_author', 'institution', 'doi', 'collab_instances']
 
     return df[col_order].sort_values('brown_author', ascending = True).reset_index(drop = True)
 
