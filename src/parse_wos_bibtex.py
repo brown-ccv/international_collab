@@ -87,6 +87,8 @@ def get_international_authors(affiliation_str, doi):
     df = pd.DataFrame()
     i = 0                           # row counter we'll increment
     for a in affiliation_list:
+        if '(Reprint Author)' in a:
+            continue
 
         # When we only have one author,
         if a.find('; ') == -1:
@@ -111,7 +113,7 @@ def get_international_authors(affiliation_str, doi):
         else:
             last_semicolon = a.rfind('; ')
             second_comma = re.match('^[^,]*,[^,]*', a[last_semicolon+1:]).end()
-            last_author = a[last_semicolon+1:second_comma]
+            last_author = a[(last_semicolon + 1):(last_semicolon + 1 + second_comma)]
 
             authors = a[0:last_semicolon].split('; ')
             authors.append(last_author)
@@ -153,6 +155,12 @@ def extract_publication_data(pub_dict):
     brown_authors = get_brown_authors(pub_dict["affiliation"], doi)
     intl_authors = get_international_authors(pub_dict["affiliation"], doi)
 
+    # There are rare cases where we get no international authors. This
+    # occurs when the Brown author has an affiliation with a non-US school.
+    # In these cases we just return an empty dataframe.
+    if intl_authors.shape[0] == 0:
+        return pd.DataFrame()
+
     authors = pd.merge(brown_authors, intl_authors, how = 'left', on = 'doi')
     # n = authors.shape[0]
     if 'author-email' in pub_dict:
@@ -175,8 +183,10 @@ def parse_all_publication_data(dict_list):
     df = extract_publication_data(dict_list[0])
 
     for i in range(1, n):
+        print(i)
         newdata = extract_publication_data(dict_list[i])
-        df = df.append(newdata, ignore_index = True)
+        if newdata.shape[0] != 0:
+            df = df.append(newdata, ignore_index = True)
 
     # Count instances of collaboration for each Brown author. And
     # note that a single publication for a Brown author will have as
@@ -195,18 +205,51 @@ def parse_all_publication_data(dict_list):
 
 
 
-def find_pub(dict_list, id):
+def find_pub(dict_list, doi):
     '''
-    This is a quick function to find a publication in the list given its ISI ID.
+    This is a quick function to find a publication in the list given its DOI.
     '''
     n = len(dict_list)
     res = None
     for i in range(n):
-        if dict_list[i]['ID'] == id:
+        if dict_list[i]['doi'] == doi:
             res = dict_list[i]
     return res
 
 # pub = find_pub(d, 'ISI:000367781400001')
+
+
+
+def count_authors(pub_dict):
+    '''
+    Given a publication, this function returns a tuple with the
+    number of Brown authors, the number of international authors,
+    and the DOI for the publication.
+    '''
+    affiliation_str = pub_dict['affiliation']
+    if 'doi' in pub_dict:
+        doi = pub_dict['doi']
+    else:
+        doi = pub_dict['ID']
+    affils_list = affiliation_str.split('\n')
+    cnt_brown = get_brown_authors(affiliation_str, doi).shape[0]
+    cnt_intl = get_international_authors(affiliation_str, doi).shape[0]
+    return (cnt_brown, cnt_intl, doi)
+
+
+def count_all_authors(pub_list):
+    n = len(pub_list)
+    out = pd.DataFrame()
+    out['n_brown_authors'] = np.zeros(n, int)
+    out['n_intl_authors'] = np.zeros(n, int)
+    out['doi'] = np.zeros(n, str)
+
+    for i in range(n):
+        out.iloc[i, :] = count_authors(pub_list[i])
+
+    return out
+
+# res1 = count_all_authors(d)
 
 
 if __name__ == '__main__':
