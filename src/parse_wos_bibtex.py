@@ -40,7 +40,7 @@ def read_all_bibtex(folder):
 # d = read_all_bibtex('../wos_bibtex/')
 
 
-def get_brown_authors(affiliation_str, doi):
+def get_brown_authors(affiliation_str, doi = None):
     '''
     Given the value of the `affiliation` entry from a Web-of-Science BibTex
     entry, this function returns the authors affiliated with Brown University.
@@ -101,11 +101,11 @@ def get_international_authors(affiliation_str, doi):
             # only appear once; the affiliation that appears for
             # that author is simply the first one listed.
             if i == 0:
-                df.loc[i, 'intl_author'] = a[0:second_comma]
+                df.loc[i, 'intl_author'] = a[0:second_comma].strip()
                 df.loc[i, 'institution'] = a[second_comma+1:]
                 i += 1
-            elif a[0:second_comma] not in df['intl_author'].values:
-                df.loc[i, 'intl_author'] = a[0:second_comma]
+            elif a[0:second_comma].strip() not in df['intl_author'].values:
+                df.loc[i, 'intl_author'] = a[0:second_comma].strip()
                 df.loc[i, 'institution'] = a[second_comma+1:]
                 i += 1
 
@@ -122,11 +122,11 @@ def get_international_authors(affiliation_str, doi):
 
             for athr in authors:
                 if i == 0:
-                    df.loc[i, 'intl_author'] = athr
+                    df.loc[i, 'intl_author'] = athr.strip()
                     df.loc[i, 'institution'] = institution
                     i += 1
-                elif athr not in df['intl_author'].values:
-                    df.loc[i, 'intl_author'] = athr
+                elif athr.strip() not in df['intl_author'].values:
+                    df.loc[i, 'intl_author'] = athr.strip()
                     df.loc[i, 'institution'] = institution
                     i += 1
 
@@ -138,6 +138,66 @@ def get_international_authors(affiliation_str, doi):
 ## example use:
 # get_international_authors(d[1]["affiliation"], '123')
 
+
+
+
+def get_all_authors(affiliation_str, doi = None):
+    '''
+    Given the value of the `affiliation` entry from a Web-of-Science
+    BibTex entry, this function returns the authors.
+    '''
+    affiliation_list = affiliation_str.split('\n')
+
+    df = pd.DataFrame()
+    i = 0                           # row counter we'll increment
+    for a in affiliation_list:
+        if '(Reprint Author)' in a:
+            continue
+
+        # When we only have one author,
+        if a.find('; ') == -1:
+            # The regex below matches from the beginning
+            # of the string until the second comma
+            second_comma = re.match('^[^,]*,[^,]*', a).end()
+
+            # Note that we only include an author once, which
+            # means that authors with multiple affiliations will
+            # only appear once; the affiliation that appears for
+            # that author is simply the first one listed.
+            if i == 0:
+                df.loc[i, 'author'] = a[0:second_comma].strip()
+                df.loc[i, 'institution'] = a[second_comma+1:]
+                i += 1
+            elif a[0:second_comma].strip() not in df['author'].values:
+                df.loc[i, 'author'] = a[0:second_comma].strip()
+                df.loc[i, 'institution'] = a[second_comma+1:]
+                i += 1
+
+        # When we have multiple authors in same affiliation line
+        else:
+            last_semicolon = a.rfind('; ')
+            second_comma = re.match('^[^,]*,[^,]*', a[last_semicolon+1:]).end()
+            last_author = a[(last_semicolon + 1):(last_semicolon + 1 + second_comma)]
+
+            authors = a[0:last_semicolon].split('; ')
+            authors.append(last_author)
+            idx = last_semicolon + 1 + second_comma + 2
+            institution = a[idx:]
+
+            for athr in authors:
+                if i == 0:
+                    df.loc[i, 'author'] = athr.strip()
+                    df.loc[i, 'institution'] = institution
+                    i += 1
+                elif athr.strip() not in df['author'].values:
+                    df.loc[i, 'author'] = athr.strip()
+                    df.loc[i, 'institution'] = institution
+                    i += 1
+
+    df['doi'] = doi
+    return df
+
+# get_all_authors(d[0]['affiliation'], 123)
 
 def extract_publication_data(pub_dict):
     '''
@@ -168,40 +228,78 @@ def extract_publication_data(pub_dict):
     else:
         authors['contact_email'] = ''
 
-    # There are duplicate rows because the Reprint Author is listed twice,
-    # so we remove the duplication before returning the dataframe
-    keep_col = ['(Reprint Author)' not in x for x in authors['intl_author']]
+    # # There is a chance that on a given paper an author could be counted
+    # # as both an international author and a Brown author because of
+    # # dual appointments. We remove all instances of collaboration where
+    # # the Brown author is the international author.
+    # keep_row = authors['intl_author'] != authors['brown_author']
 
-    return authors.loc[keep_col, :]
+    return authors #.loc[keep_row, :]
 
 ## example use:
 # extract_publication_data(d[6])
 
 
-def parse_all_publication_data(dict_list):
+def count_authors(pub_dict):
+    '''
+    Given a publication, this function returns a tuple with the
+    number of Brown authors, and the number of total authors.
+    '''
+    affiliation_str = pub_dict['affiliation']
+    affils_list = affiliation_str.split('\n')
+    cnt_brown = get_brown_authors(affiliation_str).shape[0]
+    cnt_authors = get_all_authors(affiliation_str).shape[0]
+    return (cnt_brown, cnt_authors)
+
+
+def keep_publication(pub_dict, min_ratio, team_size):
+    n_brown_authors, n_authors = count_authors(pub_dict)
+    ratio = n_brown_authors/n_authors
+    keep_pub = (n_authors < team_size) or (ratio > min_ratio)
+    return keep_pub
+
+
+def clean_contact_email(s):
+    tmp = s.replace('\n', ' ')
+    out = tmp.replace('\_', '_')
+    return out
+
+
+def parse_all_publication_data(dict_list, min_ratio = 0.2, team_size = 20):
     n = len(dict_list)
     df = extract_publication_data(dict_list[0])
 
     for i in range(1, n):
-        print(i)
-        newdata = extract_publication_data(dict_list[i])
-        if newdata.shape[0] != 0:
-            df = df.append(newdata, ignore_index = True)
+        if keep_publication(dict_list[i], min_ratio, team_size):
+            newdata = extract_publication_data(dict_list[i])
+            if newdata.shape[0] != 0:
+                df = df.append(newdata, ignore_index = True)
 
-    # Count instances of collaboration for each Brown author. And
-    # note that a single publication for a Brown author will have as
-    # many "instances" of collaboration as there are international
+    df['has_brown_affil'] = False
+    for i in range(df.shape[0]):
+        df.loc[i, 'has_brown_affil'] = df.loc[i, 'intl_author'] in df['brown_author'].values
+        df.loc[i, 'contact_email'] = clean_contact_email(df.loc[i, 'contact_email'])
+
+    # Here we drop rows where an instance of collaboration is an author
+    # with themself. This can happen when a given author has both a Brown
+    # and international affiliation.
+    keep_row = df['intl_author'] != df['brown_author']
+    df = df.loc[keep_row, :]
+
+    # Count instances of collaboration for each international author.
+    # Note that a single publication for an author will have as
+    # many "instances" of collaboration as there are Brown
     # authors on that paper.
-    collab_cnt = df.groupby('brown_author').size().reset_index()
-    collab_cnt.columns = ['brown_author', 'collab_instances']
-    df = pd.merge(df, collab_cnt, how = 'left', on = 'brown_author')
+    collab_cnt = df.groupby('intl_author').size().reset_index()
+    collab_cnt.columns = ['intl_author', 'collab_instances']
+    df = pd.merge(df, collab_cnt, how = 'left', on = 'intl_author')
 
-    col_order = ['brown_author', 'intl_author', 'institution', 'doi', 'contact_email', 'collab_instances']
+    col_order = ['intl_author', 'brown_author', 'institution', 'has_brown_affil', 'doi', 'contact_email', 'collab_instances']
 
-    return df[col_order].sort_values('brown_author', ascending = True).reset_index(drop = True)
+    return df[col_order].sort_values(['collab_instances', 'intl_author'], ascending = False).reset_index(drop = True)
 
 ## example use:
-# res = parse_all_publication_data(d)
+# res = parse_all_publication_data(d[0:1250])
 
 
 
@@ -212,44 +310,15 @@ def find_pub(dict_list, doi):
     n = len(dict_list)
     res = None
     for i in range(n):
-        if dict_list[i]['doi'] == doi:
-            res = dict_list[i]
+        if 'doi' in dict_list[i]:
+            if dict_list[i]['doi'] == doi:
+                res = dict_list[i]
+        else:
+            if dict_list[i]['ID'] == doi:
+                res = dict_list[i]
     return res
 
-# pub = find_pub(d, 'ISI:000367781400001')
-
-
-
-def count_authors(pub_dict):
-    '''
-    Given a publication, this function returns a tuple with the
-    number of Brown authors, the number of international authors,
-    and the DOI for the publication.
-    '''
-    affiliation_str = pub_dict['affiliation']
-    if 'doi' in pub_dict:
-        doi = pub_dict['doi']
-    else:
-        doi = pub_dict['ID']
-    affils_list = affiliation_str.split('\n')
-    cnt_brown = get_brown_authors(affiliation_str, doi).shape[0]
-    cnt_intl = get_international_authors(affiliation_str, doi).shape[0]
-    return (cnt_brown, cnt_intl, doi)
-
-
-def count_all_authors(pub_list):
-    n = len(pub_list)
-    out = pd.DataFrame()
-    out['n_brown_authors'] = np.zeros(n, int)
-    out['n_intl_authors'] = np.zeros(n, int)
-    out['doi'] = np.zeros(n, str)
-
-    for i in range(n):
-        out.iloc[i, :] = count_authors(pub_list[i])
-
-    return out
-
-# res1 = count_all_authors(d)
+# pub = find_pub(d, '10.1249/MSS.0000000000001054')
 
 
 if __name__ == '__main__':
@@ -260,8 +329,8 @@ if __name__ == '__main__':
     d = read_all_bibtex(folder)
     print('Extracting publication information...')
 
-    df = parse_all_publication_data(d)
+    df = parse_all_publication_data(d, 0.2, 20)
     print('Writing results to .csv file...')
     df.to_csv('results.csv', index = False)
     elapsed = time() - t0
-    print('Done! Total run time was {0} seconds.'.format(elapsed))
+    print('Done! Total run time was {0:.2f} seconds.'.format(elapsed))
