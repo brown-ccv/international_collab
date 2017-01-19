@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import re
 import sys
+import numpy as np
 
 from time import time
 
@@ -102,11 +103,11 @@ def get_international_authors(affiliation_str, doi):
             # that author is simply the first one listed.
             if i == 0:
                 df.loc[i, 'intl_author'] = a[0:second_comma].strip()
-                df.loc[i, 'institution'] = a[second_comma+1:]
+                df.loc[i, 'institution'] = a[second_comma+1:].strip()
                 i += 1
             elif a[0:second_comma].strip() not in df['intl_author'].values:
                 df.loc[i, 'intl_author'] = a[0:second_comma].strip()
-                df.loc[i, 'institution'] = a[second_comma+1:]
+                df.loc[i, 'institution'] = a[second_comma+1:].strip()
                 i += 1
 
         # When we have multiple authors in same affiliation line
@@ -123,11 +124,11 @@ def get_international_authors(affiliation_str, doi):
             for athr in authors:
                 if i == 0:
                     df.loc[i, 'intl_author'] = athr.strip()
-                    df.loc[i, 'institution'] = institution
+                    df.loc[i, 'institution'] = institution.strip()
                     i += 1
                 elif athr.strip() not in df['intl_author'].values:
                     df.loc[i, 'intl_author'] = athr.strip()
-                    df.loc[i, 'institution'] = institution
+                    df.loc[i, 'institution'] = institution.strip()
                     i += 1
 
     # We will pd.merge() with the Brown authors table
@@ -302,7 +303,6 @@ def parse_all_publication_data(dict_list, min_ratio = 0.2, team_size = 20):
 # res = parse_all_publication_data(d[0:1250])
 
 
-
 def find_pub(dict_list, doi):
     '''
     This is a quick function to find a publication in the list given its DOI.
@@ -321,6 +321,37 @@ def find_pub(dict_list, doi):
 # pub = find_pub(d, '10.1249/MSS.0000000000001054')
 
 
+def not_in_prior_years(authors, prior_authors):
+    n = authors.shape[0]
+    keep = pd.Series(np.ones(n, bool))
+
+    for i in range(n):
+        if authors[i] in prior_authors.values:
+            keep[i] = False
+    return list(keep)
+
+
+def concat_str(x):
+    x_uniq = np.unique(x)
+    res = '; '.join(v for v in x_uniq)
+    return res
+
+
+def aggregate_intl_author(instances, prior_years):
+    intl_authors = instances.loc[:, ['intl_author', \
+                                 'has_brown_affil', \
+                                 'collab_instances']].drop_duplicates(inplace = False)
+    keep_row = not_in_prior_years(intl_authors['intl_author'].values, prior_years['prior_intl_author'])
+    intl_authors = intl_authors.loc[keep_row, :]
+    agg = instances.pivot_table(values = ['institution', 'brown_author', 'contact_email', 'doi'],
+                                             index = 'intl_author',
+                                             aggfunc = concat_str).reset_index(drop = False)
+    print(intl_authors.columns)
+    print(agg.columns)
+    res = pd.merge(intl_authors, agg, how = 'left', on = 'intl_author')
+    return res
+
+
 if __name__ == '__main__':
     t0 = time()
     folder = sys.argv[1]
@@ -329,8 +360,13 @@ if __name__ == '__main__':
     d = read_all_bibtex(folder)
     print('Extracting publication information...')
 
-    df = parse_all_publication_data(d, 0.2, 20)
+    instances = parse_all_publication_data(d, 0.2, 20)
+    prior_years = pd.read_csv('intl_authors_2014-2015.csv')
+
+    intl_authors = aggregate_intl_author(instances, prior_years)
+    intl_authors.to_csv('intl_authors.csv', index = False)
+
     print('Writing results to .csv file...')
-    df.to_csv('results.csv', index = False)
+    instances.to_csv('instances.csv', index = False)
     elapsed = time() - t0
     print('Done! Total run time was {0:.2f} seconds.'.format(elapsed))
