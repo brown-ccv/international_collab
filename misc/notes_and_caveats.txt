@@ -1,0 +1,14 @@
+Notes and caveats for instances_of_collab tab:
+
+1. The data set consists of instances-of-collaboration from 2016 publications appearing on Web of Science. Each row represents an instance-of-collaboration, which we define to be any combination of a Brown researcher with an international collaborator on a given publication. For example, a publication with a Brown researcher and two international collaborators will count as two instances-of-collaboration—one for each international collaborator. Each row lists the international authors’ total instances-of-collaboration.
+
+2. Publications were excluded if there were 20 or more authors and less than 20% were from Brown. These values were selected with the expectation that publications with large research teams should only be considered if a substantial portion of the researchers are from Brown. 
+
+3. When parsing authors’ affiliations, we only consider the first one that appears in the list. There are some authors with affiliations with several departments (or even institutions). Only the first affiliation is captured. A corollary to this is that a given international author may have an affiliation with Brown. In these cases, the `has_brown_affil` column indicates this.
+
+4. The majority of publications list a DOI number. There are, however, cases where this is missing. In those cases, the `doi` column lists the Web of Science identifier (ISI number). 
+
+5. For counting instances-of-collaboration we have relied on exact-name matches. That means that if a given author used even a slightly different version of their name (e.g., including middle initial), they would be counted as separate researchers. 
+
+6. The `contact_email` column lists the e-mail of the corresponding author(s) for the publication. This is not necessarily the international author or the Brown author.
+
