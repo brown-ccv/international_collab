@@ -322,6 +322,11 @@ def find_pub(dict_list, doi):
 
 
 def not_in_prior_years(authors, prior_authors):
+    '''
+    Given an array of authors, this function checks whether each author
+    appeared in the prior years. An list of booleans is returned with
+    entries corresponding to each author.
+    '''
     n = authors.shape[0]
     keep = pd.Series(np.ones(n, bool))
 
@@ -338,16 +343,22 @@ def concat_str(x):
 
 
 def aggregate_intl_author(instances, prior_years):
+    '''
+    Given the instances-of-collaboration dataframe, this function aggregates
+    the international author data. In particular, we concatenate the string
+    fields (e.g. `institution`) separating elements by `;`, and return a
+    dataframe with a single row for each international author.
+    '''
     intl_authors = instances.loc[:, ['intl_author', \
-                                 'has_brown_affil', \
-                                 'collab_instances']].drop_duplicates(inplace = False)
+                                     'has_brown_affil', \
+                                     'collab_instances']].drop_duplicates(inplace = False)
+
     keep_row = not_in_prior_years(intl_authors['intl_author'].values, prior_years['prior_intl_author'])
     intl_authors = intl_authors.loc[keep_row, :]
     agg = instances.pivot_table(values = ['institution', 'brown_author', 'contact_email', 'doi'],
                                              index = 'intl_author',
                                              aggfunc = concat_str).reset_index(drop = False)
-    print(intl_authors.columns)
-    print(agg.columns)
+
     res = pd.merge(intl_authors, agg, how = 'left', on = 'intl_author')
     return res
 
@@ -364,9 +375,9 @@ if __name__ == '__main__':
     prior_years = pd.read_csv('intl_authors_2014-2015.csv')
 
     intl_authors = aggregate_intl_author(instances, prior_years)
-    intl_authors.to_csv('intl_authors.csv', index = False)
-
     print('Writing results to .csv file...')
+
+    intl_authors.to_csv('intl_authors.csv', index = False)
     instances.to_csv('instances.csv', index = False)
     elapsed = time() - t0
     print('Done! Total run time was {0:.2f} seconds.'.format(elapsed))
